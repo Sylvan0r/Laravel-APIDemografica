@@ -13,8 +13,13 @@ return new class extends Migration
     {
         Schema::create('municipio', function (Blueprint $table) {
             $table->id();
+            $table->string('isla_name');
             $table->string('name');
             $table->unsignedBigInteger('isla_id');
+            $table->string('gdc_municipio')->unique();
+            $table->string('gdc_isla');
+            $table->foreign('isla_name')->references('name')->on('isla');
+            $table->foreign('gdc_isla')->references('gdc_isla')->on('isla');
             $table->foreign('isla_id')->references('id')->on('isla');
             $table->timestamps();
         });

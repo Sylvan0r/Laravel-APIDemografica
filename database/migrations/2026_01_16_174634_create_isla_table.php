@@ -13,7 +13,8 @@ return new class extends Migration
     {
         Schema::create('isla', function (Blueprint $table) {
             $table->id();
-            $table->string('name');
+            $table->string('gdc_isla')->unique();
+            $table->string('name')->unique();
             $table->timestamps();
         });
     }

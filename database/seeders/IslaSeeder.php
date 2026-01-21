@@ -4,57 +4,51 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
+use Carbon\Carbon;
 
 class IslaSeeder extends Seeder
 {
     public function run(): void
     {
-        $path = database_path(
-            'data/dataset-ISTAC_E30243A_000001_1.5_20260116173657.csv'
-        );
+        $path = database_path('data/dataset-ISTAC_E30243A_000001_1.5_20260116173657.csv');
+        $handle = fopen($path, 'r');
 
-        if (!File::exists($path)) {
-            $this->command->error('El archivo CSV no existe.');
-            return;
+        if ($handle === false) {
+            throw new \RuntimeException('No se pudo abrir el CSV');
         }
 
-        $file = fopen($path, 'r');
-
-        $header = fgetcsv($file, 0, ',');
-
-        $territorioIndex = array_search('TERRITORIO#es', $header);
-
-        if ($territorioIndex === false) {
-            $this->command->error('La columna TERRITORIO#es no existe.');
-            return;
-        }
-
+        $now = Carbon::now();
         $islas = [];
 
-        while (($row = fgetcsv($file, 0, ',')) !== false) {
-            $territorio = trim($row[$territorioIndex] ?? '');
+        // Saltar cabecera
+        fgetcsv($handle);
 
-            if (in_array($territorio, ['Canarias', 'Total', ''], true)) {
+        while (($row = fgetcsv($handle)) !== false) {
+            $nombre = trim($row[0]); // TERRITORIO#es
+            $codigo = trim($row[1]); // TERRITORIO_CODE
+
+            if ($nombre === '' || $codigo === '') {
                 continue;
             }
 
-            $islas[] = $territorio;
+            //  FILTRO SOLO CANARIAS
+            if (!str_starts_with($codigo, 'ES70')) {
+                continue;
+            }
+
+            // DEDUPLICACIÓN POR ISLA
+            if (!isset($islas[$codigo])) {
+                $islas[$codigo] = [
+                    'gdc_isla' => $codigo,
+                    'name' => $nombre,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
         }
 
-        fclose($file);
+        fclose($handle);
 
-        $islas = array_unique($islas);
-
-        DB::table('isla')->upsert(
-            collect($islas)->map(fn ($isla) => [
-                'name' => $isla,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ])->toArray(),
-            ['name']
-        );
-
-        $this->command->info('Islas de Canarias insertadas correctamente.');
+        DB::table('isla')->insert(array_values($islas));
     }
 }

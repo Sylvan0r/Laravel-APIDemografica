@@ -13,13 +13,24 @@ return new class extends Migration
     {
         Schema::create('population', function (Blueprint $table) {
             $table->id();
-            $table->year('year');
-            $table->integer('population');
-            $table->unsignedBigInteger('municipio_id');
+
+            $table->unsignedBigInteger('municipio_id')->nullable();
             $table->foreign('municipio_id')->references('id')->on('municipio');
-            $table->string('gender');
-            $table->integer('age');
+
+            $table->unsignedBigInteger('isla_id');
+            $table->foreign('isla_id')->references('id')->on('isla');
+
+            $table->year('year');
+            $table->string('gender'); // Mujeres, Hombres, T
+            $table->string('age');    // "De 5 a 9 años", "46 años", etc
+            $table->integer('population')->nullable(); 
+            $table->decimal('proportion', 5, 2)->nullable(); // porcentaje
+
             $table->timestamps();
+
+            $table->index('municipio_id');
+            $table->index('isla_id');
+            $table->index(['year', 'gender']);
         });
     }
 
