@@ -14,11 +14,11 @@ return new class extends Migration
         Schema::create('population', function (Blueprint $table) {
             $table->id();
 
-            $table->unsignedBigInteger('municipio_id')->nullable();
-            $table->foreign('municipio_id')->references('id')->on('municipio');
+            $table->string('gdc_municipio')->nullable();
+            $table->foreign('gdc_municipio')->references('gdc_municipio')->on('municipio');
 
-            $table->unsignedBigInteger('isla_id');
-            $table->foreign('isla_id')->references('id')->on('isla');
+            $table->string('gdc_isla')->nullable();
+            $table->foreign('gdc_isla')->references('gdc_isla')->on('isla');
 
             $table->year('year');
             $table->string('gender'); // Mujeres, Hombres, T
@@ -28,8 +28,8 @@ return new class extends Migration
 
             $table->timestamps();
 
-            $table->index('municipio_id');
-            $table->index('isla_id');
+            $table->index('gdc_municipio');
+            $table->index('gdc_isla');
             $table->index(['year', 'gender']);
         });
     }
