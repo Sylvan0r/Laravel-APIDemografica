@@ -11,6 +11,6 @@ Route::get('/status', function () {
     ]);
 });
 
-Route::get('/municipios/{municipio}/population', [ApiMunicipioController::class, 'index']);
+Route::get('/municipios/{gdc}/population', [ApiMunicipioController::class, 'show']);
 
-Route::apiResource('isla', ApiIslaController::class);
+Route::apiResource('isla', ApiIslaController::class)->only(['index', 'show']);

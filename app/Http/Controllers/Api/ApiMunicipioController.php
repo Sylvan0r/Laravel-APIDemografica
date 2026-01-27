@@ -5,44 +5,16 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Municipio;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ApiMunicipioController extends Controller
 {
     /**
      * Display a listing of the resource.
      */
-    public function index(Request $request, Municipio $municipio)
+    public function index(string $gdc)
     {
-        $query = $municipio->population()
-            ->where('type', 'POBLACION');
-
-        // 🔹 Filtros
-        if ($request->filled('year')) {
-            $query->where('year', $request->year);
-        }
-
-        if ($request->filled('gender')) {
-            $query->where('gender', $request->gender);
-        }
-
-        if ($request->filled('age')) {
-            $query->where('age', $request->age);
-        }
-
-        // 🔹 Ordenación
-        $orderBy = $request->get('order_by', 'age');
-        $orderDir = $request->get('order_dir', 'asc');
-
-        $query->orderBy($orderBy, $orderDir);
-
-        return response()->json([
-            'municipio' => [
-                'name' => $municipio->name,
-                'gdc' => $municipio->gdc_municipio,
-            ],
-            'filters' => $request->only(['year', 'gender', 'age']),
-            'data' => $query->get(),
-        ]);
+        //
     }
 
     /**
@@ -64,9 +36,33 @@ class ApiMunicipioController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(Municipio $municipio)
+    public function show(string $gdc)
     {
-        //
+        $data = DB::table('population')
+            ->where('gdc_municipio', $gdc)
+            ->whereNotNull('population')
+            ->orderBy('year')
+            ->orderBy('age')
+            ->get([
+                'year',
+                'age',
+                'gender',
+                'population',
+                'proportion',
+            ]);
+
+        if ($data->isEmpty()) {
+            return response()->json([
+                'message' => 'No hay datos para el municipio indicado',
+                'gdc_municipio' => $gdc,
+            ], 404);
+        }
+
+        return response()->json([
+            'gdc_municipio' => $gdc,
+            'total_records' => $data->count(),
+            'data' => $data,
+        ]);
     }
 
     /**
