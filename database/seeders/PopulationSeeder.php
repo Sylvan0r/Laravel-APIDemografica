@@ -10,131 +10,101 @@ class PopulationSeeder extends Seeder
 {
     public function run(): void
     {
+        ini_set('memory_limit', '1024M');
         $path = database_path('data/dataset-ISTAC_E30243A_000001_1.5_20260116173657.csv');
-
-        if (!file_exists($path)) {
-            throw new \RuntimeException("CSV no encontrado: $path");
-        }
-
-        $handle = fopen($path, 'r');
+        
         $now = Carbon::now();
 
-        /**
-         * Cache islas válidas
-         * ['ES707' => true]
-         */
-        $islas = DB::table('isla')
-            ->pluck('gdc_isla')
-            ->flip();
-
-        /**
-         * Cache municipios por nombre normalizado
-         * ['santa cruz de la palma' => '35001']
-         */
-        $municipios = DB::table('municipio')
-            ->select('gdc_municipio', 'name')
-            ->get()
-            ->mapWithKeys(function ($m) {
-                return [
-                    $this->normalize($m->name) => $m->gdc_municipio
-                ];
-            });
+        // 1. CARGA DE MAPAS (Aseguramos que las claves sean strings limpios)
+        $municipiosMap = DB::table('municipio')->pluck('gdc_isla', 'gdc_municipio')->toArray();
+        $islasExistentes = DB::table('isla')->pluck('gdc_isla')->flip()->toArray();
 
         $rows = [];
-
+        $handle = fopen($path, 'r');
+        
         // Saltar cabecera
-        fgetcsv($handle);
+        fgets($handle); 
 
-        while (($row = fgetcsv($handle)) !== false) {
+        $debugDone = false;
 
-            /**
-             * CSV columns relevantes:
-             * 0  TERRITORIO (nombre)
-             * 1  TERRITORIO_CODE (gdc_isla / ES70)
-             * 3  TIME_PERIOD_CODE (year)
-             * 4  SEXO
-             * 6  EDAD
-             * 12 MEDIDAS#es
-             * 14 OBS_VALUE
-             */
+        while (($row = fgetcsv($handle, 0, ",")) !== false) {
+            if (count($row) < 15) continue;
 
-            $territorioNombre = trim($row[0]);
-            $gdcIsla = trim($row[1]);
-            $year = (int) $row[3];
-            $gender = trim($row[4]);
-            $age = trim($row[6]);
-            $measure = trim($row[12]);
-            $value = trim($row[14]);
-
-            if ($value === '') {
-                continue;
+            // --- LIMPIEZA EXTREMA ---
+            // Quitamos BOM, comillas y espacios en blanco
+            $codigoCSV = trim(str_replace(['"', "\xEF\xBB\xBF"], '', $row[1])); 
+            
+            // Si el código es puramente numérico, nos aseguramos de que no tenga espacios
+            if (is_numeric($codigoCSV)) {
+                $codigoCSV = (string)intval($codigoCSV);
             }
 
-            // Solo islas canarias
-            if (!isset($islas[$gdcIsla])) {
-                continue;
+            $year      = (int) $row[3];
+            $genderRaw = trim($row[4]);
+            $age       = trim($row[6]);
+            $measure   = trim($row[13]); 
+            $value     = trim($row[14]);
+
+            if ($value === "" || $value === null) continue;
+
+            $gdcMunicipio = null;
+            $gdcIsla      = null;
+
+            // 2. LÓGICA DE ASIGNACIÓN CON DEBUG
+            if (array_key_exists($codigoCSV, $municipiosMap)) {
+                $gdcMunicipio = $codigoCSV;
+                $gdcIsla      = $municipiosMap[$codigoCSV];
+            } elseif (isset($islasExistentes[$codigoCSV]) || $codigoCSV === 'ES70') {
+                $gdcIsla      = $codigoCSV;
+                $gdcMunicipio = null;
+            } else {
+                // Si no coincide, intentamos buscarlo en el mapa ignorando ceros a la izquierda
+                $clean = ltrim($codigoCSV, '0');
+                if (array_key_exists($clean, $municipiosMap)) {
+                    $gdcMunicipio = $clean;
+                    $gdcIsla = $municipiosMap[$clean];
+                } else {
+                    continue; 
+                }
             }
 
             // Normalizar género
-            if ($gender === 'Total') {
-                $gender = 'T';
-            }
+            $gender = match ($genderRaw) {
+                'Hombres' => 'M',
+                'Mujeres' => 'F',
+                default   => 'T'
+            };
 
-            // Resolver municipio por nombre
-            $gdcMunicipio = null;
-            $normalizedTerritorio = $this->normalize($territorioNombre);
-
-            if (isset($municipios[$normalizedTerritorio])) {
-                $gdcMunicipio = $municipios[$normalizedTerritorio];
-            }
-
-            // Clave única lógica
-            $key = implode('|', [
-                $gdcIsla,
-                $gdcMunicipio ?? 'ISLA',
-                $year,
-                $age,
-                $gender,
-            ]);
+            $key = ($gdcIsla ?? 'X') . '-' . ($gdcMunicipio ?? 'Y') . "-{$year}-{$age}-{$gender}";
 
             if (!isset($rows[$key])) {
                 $rows[$key] = [
-                    'gdc_isla' => $gdcIsla,
+                    'gdc_isla'      => $gdcIsla,
                     'gdc_municipio' => $gdcMunicipio,
-                    'year' => $year,
-                    'gender' => $gender,
-                    'age' => $age,
-                    'population' => null,
-                    'proportion' => null,
-                    'created_at' => $now,
-                    'updated_at' => $now,
+                    'year'          => $year,
+                    'gender'        => $gender,
+                    'age'           => $age,
+                    'population'    => null,
+                    'proportion'    => null,
+                    'created_at'    => $now,
+                    'updated_at'    => $now,
                 ];
             }
 
-            if ($measure === 'Población') {
+            if ($measure === 'POBLACION') {
                 $rows[$key]['population'] = (int) $value;
-            }
-
-            if ($measure === 'Población. Proporción') {
+            } elseif ($measure === 'POBLACION_PROPORCION') {
                 $rows[$key]['proportion'] = (float) $value;
             }
         }
-
         fclose($handle);
 
-        // Insertar en bloques
-        foreach (array_chunk(array_values($rows), 500) as $chunk) {
-            DB::table('population')->insertOrIgnore($chunk);
-        }
-    }
+        // 3. INSERCIÓN
+        $registrosConMunicipio = collect($rows)->whereNotNull('gdc_municipio')->count();
+        $this->command->info("Registros con municipio encontrados: $registrosConMunicipio");
 
-    /**
-     * Normaliza strings para comparación robusta
-     */
-    private function normalize(string $value): string
-    {
-        $value = mb_strtolower(trim($value), 'UTF-8');
-        $value = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
-        return preg_replace('/\s+/', ' ', $value);
+        foreach (array_chunk(array_values($rows), 1000) as $chunk) {
+            DB::table('population')->insert($chunk);
+        }
     }
 }
