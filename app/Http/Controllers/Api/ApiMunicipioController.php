@@ -38,31 +38,7 @@ class ApiMunicipioController extends Controller
      */
     public function show(string $gdc)
     {
-        $data = DB::table('population')
-            ->where('gdc_municipio', $gdc)
-            ->whereNotNull('population')
-            ->orderBy('year')
-            ->orderBy('age')
-            ->get([
-                'year',
-                'age',
-                'gender',
-                'population',
-                'proportion',
-            ]);
-
-        if ($data->isEmpty()) {
-            return response()->json([
-                'message' => 'No hay datos para el municipio indicado',
-                'gdc_municipio' => $gdc,
-            ], 404);
-        }
-
-        return response()->json([
-            'gdc_municipio' => $gdc,
-            'total_records' => $data->count(),
-            'data' => $data,
-        ]);
+        //
     }
 
     /**
@@ -88,4 +64,59 @@ class ApiMunicipioController extends Controller
     {
         //
     }
+
+    public function population(Request $request, string $gdc)
+    {
+        $query = DB::table('population')
+            ->where('gdc_municipio', $gdc);
+
+        // Filtros
+        if ($request->filled('gender')) {
+            $query->where('gender', $request->gender);
+        }
+        if ($request->filled('age')) {
+            $query->where('age', $request->age);
+        }
+        if ($request->filled('age_min')) {
+            $query->whereRaw('CAST(SUBSTRING_INDEX(age, " ", 1) AS UNSIGNED) >= ?', [$request->age_min]);
+        }
+        if ($request->filled('age_max')) {
+            $query->whereRaw('CAST(SUBSTRING_INDEX(age, " ", 1) AS UNSIGNED) <= ?', [$request->age_max]);
+        }
+        if ($request->filled('year')) {
+            $query->where('year', $request->year);
+        }
+
+        // Orden
+        if ($request->filled('order_by')) {
+            $query->orderBy($request->order_by, $request->get('order_dir', 'asc'));
+        } else {
+            $query->orderBy('age');
+        }
+
+        $data = $query->get();
+
+        if ($data->isEmpty()) {
+            return response()->json([
+                'message' => 'No hay datos para este municipio',
+                'gdc_municipio' => $gdc
+            ], 404);
+        }
+
+        return response()->json($data);
+    }
+
+    /**
+     * Buscar municipios por nombre
+     */
+    public function search(Request $request)
+    {
+        $q = $request->get('q', '');
+        $municipios = DB::table('municipio')
+            ->where('name', 'like', "%$q%")
+            ->orderBy('name')
+            ->get();
+
+        return response()->json($municipios);
+    }    
 }
