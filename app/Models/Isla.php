@@ -6,7 +6,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class isla extends Model
 {
-    protected $table = 'isla'; 
+    protected $table = 'isla';
+    protected $primaryKey = 'gdc_isla';
+    public $incrementing = false;
+    protected $keyType = 'string';    
+    
     protected $fillable = [
         'name'
     ];

@@ -3,120 +3,58 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Municipio;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use OpenApi\Attributes as OA;
 
+#[OA\Tag(name: "Municipios", description: "Datos demográficos por municipio")]
 class ApiMunicipioController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index(string $gdc)
-    {
-        //
-    }
-
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
-
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        //
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $gdc)
-    {
-        //
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Municipio $municipio)
-    {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Municipio $municipio)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Municipio $municipio)
-    {
-        //
-    }
-
+    #[OA\Get(
+        path: "/api/islas/population",
+        summary: "Población total por isla",
+        description: "Devuelve la población total por isla con filtros opcionales",
+        tags: ["Islas"],
+        parameters: [
+            new OA\Parameter(name: "year", in: "query", description: "Año", required: false, schema: new OA\Schema(type: "integer", example: 2023)),
+            new OA\Parameter(name: "gender", in: "query", description: "Género (T, M, F)", required: false, schema: new OA\Schema(type: "string", example: "T")),
+        ],
+        responses: [ new OA\Response(response: 200, description: "Listado de población por isla") ]
+    )]
     public function population(Request $request, string $gdc)
     {
-        $query = DB::table('population')
-            ->where('gdc_municipio', $gdc);
+        $query = DB::table('population')->where('gdc_municipio', $gdc);
 
-        // Filtros
-        if ($request->filled('gender')) {
-            $query->where('gender', $request->gender);
+        foreach (['gender', 'age', 'year'] as $field) {
+            if ($request->filled($field)) {
+                $query->where($field, $request->$field);
+            }
         }
-        if ($request->filled('age')) {
-            $query->where('age', $request->age);
-        }
+
         if ($request->filled('age_min')) {
-            $query->whereRaw('CAST(SUBSTRING_INDEX(age, " ", 1) AS UNSIGNED) >= ?', [$request->age_min]);
+            $query->whereRaw('CAST(SUBSTRING_INDEX(age," ",1) AS UNSIGNED) >= ?', [$request->age_min]);
         }
         if ($request->filled('age_max')) {
-            $query->whereRaw('CAST(SUBSTRING_INDEX(age, " ", 1) AS UNSIGNED) <= ?', [$request->age_max]);
-        }
-        if ($request->filled('year')) {
-            $query->where('year', $request->year);
+            $query->whereRaw('CAST(SUBSTRING_INDEX(age," ",1) AS UNSIGNED) <= ?', [$request->age_max]);
         }
 
-        // Orden
-        if ($request->filled('order_by')) {
-            $query->orderBy($request->order_by, $request->get('order_dir', 'asc'));
-        } else {
-            $query->orderBy('age');
-        }
-
-        $data = $query->get();
-
-        if ($data->isEmpty()) {
-            return response()->json([
-                'message' => 'No hay datos para este municipio',
-                'gdc_municipio' => $gdc
-            ], 404);
-        }
-
-        return response()->json($data);
+        return response()->json(
+            $query->orderBy($request->get('order_by', 'age'))->get()
+        );
     }
 
-    /**
-     * Buscar municipios por nombre
-     */
+    #[OA\Get(
+        path: "/api/municipios/search",
+        tags: ["Municipios"],
+        summary: "Buscar municipios",
+        parameters: [ new OA\Parameter(name: "q", in: "query", required: true, schema: new OA\Schema(type: "string")) ],
+        responses: [ new OA\Response(response: 200, description: "Listado de municipios") ]
+    )]
     public function search(Request $request)
     {
-        $q = $request->get('q', '');
-        $municipios = DB::table('municipio')
-            ->where('name', 'like', "%$q%")
+        return DB::table('municipio')
+            ->where('name', 'like', '%' . $request->q . '%')
             ->orderBy('name')
             ->get();
-
-        return response()->json($municipios);
-    }    
+    }
 }

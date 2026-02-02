@@ -6,7 +6,10 @@ use Illuminate\Database\Eloquent\Model;
 
 class municipio extends Model
 {
-    protected $table = 'municipio'; 
+    protected $table = 'municipio';
+    protected $primaryKey = 'gdc_municipio';
+    public $incrementing = false;
+    protected $keyType = 'string';
     protected $fillable = [
         'name',
         'isla_id'

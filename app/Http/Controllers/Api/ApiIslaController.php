@@ -3,68 +3,29 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Isla;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use OpenApi\Attributes as OA;
 
+#[OA\Tag(name: "Islas", description: "Operaciones relacionadas con islas y población")]
 class ApiIslaController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
-    {
-        //
-    }
-
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
-
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
-    {
-        //
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(Isla $isla)
-    {
-        //
-    }
-
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Isla $isla)
-    {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Isla $isla)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Isla $isla)
-    {
-        //
-    }
-
+    #[OA\Get(
+        path: "/api/isla/population",
+        tags: ["Islas"],
+        summary: "Mostrar población por isla",
+        description: "Devuelve población total o filtrada por isla con múltiples filtros combinables",
+        parameters: [
+            new OA\Parameter(name: "gender", in: "query", description: "Género (M, F, T)", schema: new OA\Schema(type: "string")),
+            new OA\Parameter(name: "age", in: "query", description: "Edad exacta", schema: new OA\Schema(type: "string")),
+            new OA\Parameter(name: "age_min", in: "query", description: "Edad mínima", schema: new OA\Schema(type: "integer")),
+            new OA\Parameter(name: "age_max", in: "query", description: "Edad máxima", schema: new OA\Schema(type: "integer")),
+            new OA\Parameter(name: "year", in: "query", description: "Año", schema: new OA\Schema(type: "integer")),
+            new OA\Parameter(name: "order_by", in: "query", description: "Campo de orden", schema: new OA\Schema(type: "string")),
+            new OA\Parameter(name: "order_dir", in: "query", description: "asc | desc", schema: new OA\Schema(type: "string")),
+        ],
+        responses: [ new OA\Response(response: 200, description: "Listado de población por isla") ]
+    )]
     public function population(Request $request)
     {
         $query = DB::table('population')
@@ -77,48 +38,40 @@ class ApiIslaController extends Controller
             )
             ->groupBy('isla.name', 'population.gdc_isla');
 
-        // Filtros combinables
         if ($request->filled('gender')) {
             $query->where('population.gender', $request->gender);
         }
-
         if ($request->filled('age')) {
             $query->where('population.age', $request->age);
         }
-
         if ($request->filled('age_min')) {
-            $query->whereRaw('CAST(SUBSTRING_INDEX(population.age, " ", 1) AS UNSIGNED) >= ?', [$request->age_min]);
+            $query->whereRaw('CAST(SUBSTRING_INDEX(population.age," ",1) AS UNSIGNED) >= ?', [$request->age_min]);
         }
-
         if ($request->filled('age_max')) {
-            $query->whereRaw('CAST(SUBSTRING_INDEX(population.age, " ", 1) AS UNSIGNED) <= ?', [$request->age_max]);
+            $query->whereRaw('CAST(SUBSTRING_INDEX(population.age," ",1) AS UNSIGNED) <= ?', [$request->age_max]);
         }
-
         if ($request->filled('year')) {
             $query->where('population.year', $request->year);
         }
 
-        // Orden
-        if ($request->filled('order_by')) {
-            $query->orderBy($request->order_by, $request->get('order_dir', 'asc'));
-        } else {
-            $query->orderBy('isla');
-        }
+        $query->orderBy($request->get('order_by', 'isla'), $request->get('order_dir', 'asc'));
 
         return response()->json($query->get());
     }
 
-    /**
-     * Buscar islas por nombre
-     */
+    #[OA\Get(
+        path: "/api/isla/search",
+        tags: ["Islas"],
+        summary: "Buscar islas",
+        description: "Busca islas por nombre",
+        parameters: [ new OA\Parameter(name: "q", in: "query", required: true, description: "Texto de búsqueda", schema: new OA\Schema(type: "string")) ],
+        responses: [ new OA\Response(response: 200, description: "Listado de islas") ]
+    )]
     public function search(Request $request)
     {
-        $q = $request->get('q', '');
-        $islas = DB::table('isla')
-            ->where('name', 'like', "%$q%")
+        return DB::table('isla')
+            ->where('name', 'like', '%' . $request->get('q') . '%')
             ->orderBy('name')
             ->get();
-
-        return response()->json($islas);
-    }    
+    }
 }
