@@ -11,50 +11,133 @@ use OpenApi\Attributes as OA;
 class ApiMunicipioController extends Controller
 {
     #[OA\Get(
-        path: "/api/islas/population",
-        summary: "Población total por isla",
-        description: "Devuelve la población total por isla con filtros opcionales",
-        tags: ["Islas"],
+        path: "/api/municipios/{gdc}/population",
+        tags: ["Municipios"],
+        summary: "Población por municipio",
+        description: "Devuelve la población de un municipio con filtros combinables",
         parameters: [
-            new OA\Parameter(name: "year", in: "query", description: "Año", required: false, schema: new OA\Schema(type: "integer", example: 2023)),
-            new OA\Parameter(name: "gender", in: "query", description: "Género (T, M, F)", required: false, schema: new OA\Schema(type: "string", example: "T")),
+            new OA\Parameter(
+                name: "gdc",
+                in: "path",
+                required: true,
+                description: "Código GDC del municipio",
+                schema: new OA\Schema(type: "string", example: "38024")
+            ),
+            new OA\Parameter(name: "year", in: "query", description: "Año", schema: new OA\Schema(type: "integer")),
+            new OA\Parameter(name: "gender", in: "query", description: "Género (T, M, F)", schema: new OA\Schema(type: "string")),
+            new OA\Parameter(name: "age", in: "query", description: "Edad exacta", schema: new OA\Schema(type: "integer")),
+            new OA\Parameter(name: "age_min", in: "query", description: "Edad mínima", schema: new OA\Schema(type: "integer")),
+            new OA\Parameter(name: "age_max", in: "query", description: "Edad máxima", schema: new OA\Schema(type: "integer")),
+            new OA\Parameter(name: "order_by", in: "query", description: "Campo de orden (age, population)", schema: new OA\Schema(type: "string")),
+            new OA\Parameter(name: "order_dir", in: "query", description: "asc | desc", schema: new OA\Schema(type: "string")),
         ],
-        responses: [ new OA\Response(response: 200, description: "Listado de población por isla") ]
+        responses: [
+            new OA\Response(response: 200, description: "Datos de población del municipio"),
+            new OA\Response(response: 404, description: "Municipio sin datos")
+        ]
     )]
     public function population(Request $request, string $gdc)
     {
-        $query = DB::table('population')->where('gdc_municipio', $gdc);
+        $query = DB::table('population')
+            ->where('gdc_municipio', $gdc);
 
-        foreach (['gender', 'age', 'year'] as $field) {
-            if ($request->filled($field)) {
-                $query->where($field, $request->$field);
-            }
+        if ($request->filled('gender')) {
+            $query->where('gender', $request->gender);
         }
 
+        if ($request->filled('year')) {
+            $query->where('year', $request->year);
+        }
+
+        if ($request->filled('age')) {
+            $query->whereRaw(
+                "CAST(SUBSTRING_INDEX(age, ' ', 1) AS UNSIGNED) = ?",
+                [(int) $request->age]
+            );
+        }
+        
         if ($request->filled('age_min')) {
-            $query->whereRaw('CAST(SUBSTRING_INDEX(age," ",1) AS UNSIGNED) >= ?', [$request->age_min]);
-        }
-        if ($request->filled('age_max')) {
-            $query->whereRaw('CAST(SUBSTRING_INDEX(age," ",1) AS UNSIGNED) <= ?', [$request->age_max]);
+            $query->whereRaw(
+                "CAST(SUBSTRING_INDEX(age, ' ', 1) AS UNSIGNED) >= ?",
+                [$request->age_min]
+            );
         }
 
-        return response()->json(
-            $query->orderBy($request->get('order_by', 'age'))->get()
-        );
+        if ($request->filled('age_max')) {
+            $query->whereRaw(
+                "CAST(SUBSTRING_INDEX(age, ' ', 1) AS UNSIGNED) <= ?",
+                [$request->age_max]
+            );
+        }
+
+        $orderBy = $request->get('order_by', 'age');
+        $orderDir = $request->get('order_dir', 'asc');
+
+        if (!in_array($orderBy, ['age', 'population'])) {
+            $orderBy = 'age';
+        }
+
+        $data = $query
+            ->orderBy($orderBy, $orderDir)
+            ->get();
+
+        if ($data->isEmpty()) {
+            return response()->json([
+                'message' => 'No hay datos para este municipio',
+                'gdc_municipio' => $gdc
+            ], 404);
+        }
+
+        return response()->json($data);
     }
 
     #[OA\Get(
         path: "/api/municipios/search",
         tags: ["Municipios"],
         summary: "Buscar municipios",
-        parameters: [ new OA\Parameter(name: "q", in: "query", required: true, schema: new OA\Schema(type: "string")) ],
-        responses: [ new OA\Response(response: 200, description: "Listado de municipios") ]
+        description: "Busca municipios por nombre (filtrado con key 'name') con orden configurable",
+        parameters: [
+            new OA\Parameter(
+                name: "name",
+                in: "query",
+                required: true,
+                description: "Texto de búsqueda dentro del nombre del municipio",
+                schema: new OA\Schema(type: "string")
+            ),
+            new OA\Parameter(
+                name: "order_by",
+                in: "query",
+                description: "Campo de orden (id | isla_name | name | isla_id | gdc_municipio | gdc_isla)",
+                schema: new OA\Schema(type: "string")
+            ),
+            new OA\Parameter(
+                name: "order_dir",
+                in: "query",
+                description: "asc | desc",
+                schema: new OA\Schema(type: "string")
+            )
+        ],
+        responses: [
+            new OA\Response(response: 200, description: "Listado de municipios filtrados y ordenados")
+        ]
     )]
     public function search(Request $request)
     {
+        $name = $request->get('name', '');
+        $orderBy  = $request->get('order_by', 'name');
+        $orderDir = strtolower($request->get('order_dir', 'asc'));
+
+        if (!in_array($orderBy, ['id', 'isla_name', 'name', 'isla_id', 'gdc_municipio', 'gdc_isla'])) {
+            $orderBy = 'name';
+        }
+
+        if (!in_array($orderDir, ['asc', 'desc'])) {
+            $orderDir = 'asc';
+        }
+
         return DB::table('municipio')
-            ->where('name', 'like', '%' . $request->q . '%')
-            ->orderBy('name')
+            ->whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($name) . '%'])
+            ->orderBy($orderBy, $orderDir)
             ->get();
     }
 }
