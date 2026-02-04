@@ -29,6 +29,7 @@ class ApiPopulationController extends Controller
             new OA\Parameter(name: "age_min", in: "query", schema: new OA\Schema(type: "integer"), description: "Edad mínima"),
             new OA\Parameter(name: "age_max", in: "query", schema: new OA\Schema(type: "integer"), description: "Edad máxima"),
             new OA\Parameter(name: "year", in: "query", schema: new OA\Schema(type: "integer"), description: "Año"),
+            new OA\Parameter(name: "municipio_name", in: "query", schema: new OA\Schema(type: "string"), description: "Nombre del municipio"),
             new OA\Parameter(name: "order_by", in: "query", description: "Campo de orden", schema: new OA\Schema(type: "string")),
             new OA\Parameter(name: "order_dir", in: "query", description: "asc | desc", schema: new OA\Schema(type: "string")),
         ],
@@ -38,70 +39,97 @@ class ApiPopulationController extends Controller
     )]
     public function evolution(Request $request)
     {
-        $query = DB::table('population')
-            ->select(
+        $level = $request->get('level', 'municipio');
+
+        $query = DB::table('population');
+
+        if ($level === 'municipio') {
+            $query->select(
+                'population.year',
+                'population.gdc_isla',
+                'population.gdc_municipio',
+                'municipio.name as municipio_name',
+                DB::raw('SUM(population.population) as total_population'),
+                DB::raw('AVG(population.proportion) as avg_proportion')
+            )
+            ->join('municipio', 'population.gdc_municipio', '=', 'municipio.gdc_municipio');
+        } else {
+            $query->select(
                 'year',
                 'gdc_isla',
-                'gdc_municipio',
                 DB::raw('SUM(population) as total_population'),
                 DB::raw('AVG(proportion) as avg_proportion')
             );
-
-        $level = $request->get('level', 'municipio');
+        }
 
         switch ($level) {
             case 'municipio':
-                $query->whereNotNull('gdc_municipio');
+                $query->whereNotNull('population.gdc_municipio');
                 break;
 
             case 'isla':
-                $query->whereNull('gdc_municipio')
-                      ->where('gdc_isla', '!=', 'ES70');
+                $query->whereNull('population.gdc_municipio')
+                    ->where('population.gdc_isla', '!=', 'ES70');
                 break;
 
             case 'canarias':
-                $query->where('gdc_isla', 'ES70');
+                $query->where('population.gdc_isla', 'ES70')
+                    ->whereNull('population.gdc_municipio');
                 break;
         }
 
         if ($request->filled('gdc_isla')) {
-            $query->where('gdc_isla', $request->gdc_isla);
+            $query->where('population.gdc_isla', $request->gdc_isla);
         }
 
-        if ($request->filled('gdc_municipio')) {
-            $query->where('gdc_municipio', $request->gdc_municipio);
+        if ($request->filled('gdc_municipio') && $level === 'municipio') {
+            $query->where('population.gdc_municipio', $request->gdc_municipio);
+        }
+
+        if ($request->filled('municipio_name') && $level === 'municipio') {
+            $name = strtolower($request->municipio_name);
+            $query->whereRaw('LOWER(municipio.name) LIKE ?', ["%{$name}%"]);
         }
 
         if ($request->filled('gender')) {
-            $query->where('gender', $request->gender);
-        }
-
-        if ($request->filled('year')) {
-            $query->where('year', (int) $request->year);
+            $query->where('population.gender', $request->gender);
+        }else{
+            $query->where('population.gender', 'T');
         }
 
         if ($request->filled('age')) {
             $query->whereRaw(
-                "CAST(SUBSTRING_INDEX(age, ' ', 1) AS UNSIGNED) = ?",
+                "CAST(SUBSTRING_INDEX(population.age, ' ', 1) AS UNSIGNED) = ?",
                 [(int) $request->age]
             );
         }
 
         if ($request->filled('age_min')) {
             $query->whereRaw(
-                "CAST(SUBSTRING_INDEX(age, ' ', 1) AS UNSIGNED) >= ?",
+                "CAST(SUBSTRING_INDEX(population.age, ' ', 1) AS UNSIGNED) >= ?",
                 [(int) $request->age_min]
             );
         }
 
         if ($request->filled('age_max')) {
             $query->whereRaw(
-                "CAST(SUBSTRING_INDEX(age, ' ', 1) AS UNSIGNED) <= ?",
+                "CAST(SUBSTRING_INDEX(population.age, ' ', 1) AS UNSIGNED) <= ?",
                 [(int) $request->age_max]
             );
         }
 
-        $query->groupBy('year', 'gdc_isla', 'gdc_municipio');
+        if ($request->filled('year')) {
+            $query->where('population.year', (int) $request->year);
+        } else {
+            $maxYear = DB::table('population')->max('year');
+            $query->where('population.year', $maxYear);
+        }
+
+        if ($level === 'municipio') {
+            $query->groupBy('population.year', 'population.gdc_isla', 'population.gdc_municipio', 'municipio.name');
+        } else {
+            $query->groupBy('year', 'gdc_isla');
+        }
 
         $orderBy = $request->get('order_by', 'year');
         $orderDir = strtolower($request->get('order_dir', 'asc'));
@@ -111,7 +139,8 @@ class ApiPopulationController extends Controller
             'total_population',
             'avg_proportion',
             'gdc_isla',
-            'gdc_municipio'
+            'gdc_municipio',
+            'municipio_name'
         ];
 
         if (!in_array($orderBy, $allowedOrderColumns)) {
@@ -124,6 +153,9 @@ class ApiPopulationController extends Controller
 
         $query->orderBy($orderBy, $orderDir);
 
-        return response()->json($query->get());
+        return response()->json([
+            'level' => $level,
+            'data' => $query->get()
+        ]);
     }
 }
