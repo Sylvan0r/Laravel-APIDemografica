@@ -12,17 +12,24 @@ class ApiPopulationController extends Controller
 {
     #[OA\Get(
         path: "/api/population/evolution",
-        summary: "Evolución de población por isla o municipio",
+        summary: "Evolución de población por municipio, isla o Canarias",
         tags: ["Population"],
         parameters: [
+            new OA\Parameter(
+                name: "level",
+                in: "query",
+                required: false,
+                description: "Nivel de agregación: municipio | isla | canarias",
+                schema: new OA\Schema(type: "string", enum: ["municipio", "isla", "canarias"])
+            ),
             new OA\Parameter(name: "gdc_isla", in: "query", schema: new OA\Schema(type: "string"), description: "Código GDC de la isla"),
             new OA\Parameter(name: "gdc_municipio", in: "query", schema: new OA\Schema(type: "string"), description: "Código GDC del municipio"),
             new OA\Parameter(name: "gender", in: "query", schema: new OA\Schema(type: "string", enum: ["H", "M", "T"]), description: "Género"),
-            new OA\Parameter(name: "age", in: "query", schema: new OA\Schema(type: "string"), description: "Edad exacta (ej: '48 años')"),
+            new OA\Parameter(name: "age", in: "query", schema: new OA\Schema(type: "integer"), description: "Edad exacta"),
             new OA\Parameter(name: "age_min", in: "query", schema: new OA\Schema(type: "integer"), description: "Edad mínima"),
             new OA\Parameter(name: "age_max", in: "query", schema: new OA\Schema(type: "integer"), description: "Edad máxima"),
             new OA\Parameter(name: "year", in: "query", schema: new OA\Schema(type: "integer"), description: "Año"),
-            new OA\Parameter(name: "order_by", in: "query", description: "Campo de orden (age, population)", schema: new OA\Schema(type: "string")),
+            new OA\Parameter(name: "order_by", in: "query", description: "Campo de orden", schema: new OA\Schema(type: "string")),
             new OA\Parameter(name: "order_dir", in: "query", description: "asc | desc", schema: new OA\Schema(type: "string")),
         ],
         responses: [
@@ -39,6 +46,23 @@ class ApiPopulationController extends Controller
                 DB::raw('SUM(population) as total_population'),
                 DB::raw('AVG(proportion) as avg_proportion')
             );
+
+        $level = $request->get('level', 'municipio');
+
+        switch ($level) {
+            case 'municipio':
+                $query->whereNotNull('gdc_municipio');
+                break;
+
+            case 'isla':
+                $query->whereNull('gdc_municipio')
+                      ->where('gdc_isla', '!=', 'ES70');
+                break;
+
+            case 'canarias':
+                $query->where('gdc_isla', 'ES70');
+                break;
+        }
 
         if ($request->filled('gdc_isla')) {
             $query->where('gdc_isla', $request->gdc_isla);
@@ -66,14 +90,14 @@ class ApiPopulationController extends Controller
         if ($request->filled('age_min')) {
             $query->whereRaw(
                 "CAST(SUBSTRING_INDEX(age, ' ', 1) AS UNSIGNED) >= ?",
-                [$request->age_min]
+                [(int) $request->age_min]
             );
         }
 
         if ($request->filled('age_max')) {
             $query->whereRaw(
                 "CAST(SUBSTRING_INDEX(age, ' ', 1) AS UNSIGNED) <= ?",
-                [$request->age_max]
+                [(int) $request->age_max]
             );
         }
 
@@ -82,7 +106,14 @@ class ApiPopulationController extends Controller
         $orderBy = $request->get('order_by', 'year');
         $orderDir = strtolower($request->get('order_dir', 'asc'));
 
-        $allowedOrderColumns = ['year', 'total_population', 'avg_proportion', 'gdc_isla', 'gdc_municipio'];
+        $allowedOrderColumns = [
+            'year',
+            'total_population',
+            'avg_proportion',
+            'gdc_isla',
+            'gdc_municipio'
+        ];
+
         if (!in_array($orderBy, $allowedOrderColumns)) {
             $orderBy = 'year';
         }
